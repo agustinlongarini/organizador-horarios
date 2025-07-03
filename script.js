@@ -2,8 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/fireba
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import { getFirestore, collection, doc, addDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
-// --- Your web app's Firebase configuration ---
-// IMPORTANTE: Reemplaza este objeto con la configuración de TU proyecto de Firebase.
+/* Configuración de Firebase*/
 const firebaseConfig = {
     apiKey: "AIzaSyDPKk9JWrBWg3nimQAKi0xXDKJNsnIjIrk",
     authDomain: "organizador-horarios-bd972.firebaseapp.com",
@@ -13,13 +12,12 @@ const firebaseConfig = {
     appId: "1:551546236622:web:9b19289d4b60d5f2932a9f"
 };
 
-// --- Initialize Firebase ---
+/* Inicialización de Firebase y referencias principales */
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = firebaseConfig.projectId; // Use your project ID for path uniqueness
+const appId = firebaseConfig.projectId;
 
-// --- Global State & DOM Elements ---
 let courses = [];
 let currentUserId = null;
 let unsubscribeFromCourses = null;
@@ -33,11 +31,12 @@ const exportBtn = document.getElementById('export-btn');
 const exportLoader = document.getElementById('export-loader');
 const scheduleExportArea = document.getElementById('schedule-export-area');
 
-// --- Constants ---
-const HOUR_ROW_HEIGHT = 4; // in rem
+/* Constantes de configuración visual y lógica */
+const HOUR_ROW_HEIGHT_REM = 4;
 const SCHEDULE_START_HOUR = 7;
 const SCHEDULE_END_HOUR = 24;
 const DAY_NAMES = ["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+const TIME_COLUMN_WIDTH_PX = 60;
 const PREDEFINED_COLORS = [
     { bg: 'hsl(25, 85%, 88%)', text: 'hsl(25, 50%, 40%)' }, { bg: 'hsl(55, 80%, 88%)', text: 'hsl(55, 50%, 40%)' },
     { bg: 'hsl(90, 70%, 88%)', text: 'hsl(90, 50%, 40%)' }, { bg: 'hsl(160, 70%, 88%)', text: 'hsl(160, 50%, 40%)' },
@@ -47,7 +46,7 @@ const PREDEFINED_COLORS = [
     { bg: 'hsl(230, 60%, 90%)', text: 'hsl(230, 50%, 45%)' }, { bg: 'hsl(120, 40%, 88%)', text: 'hsl(120, 30%, 38%)' },
 ];
 
-// --- Utility Functions ---
+/* Utilidades para manejo de horarios y colores */
 const timeToMinutes = (timeStr) => {
     if (!timeStr) return 0;
     const [hours, minutes] = timeStr.split(':').map(Number);
@@ -71,7 +70,7 @@ function setFormEnabled(isEnabled) {
     }
 }
 
-// --- Rendering Functions ---
+/* Renderiza la lista de materias cargadas */
 function renderCourseList() {
     courseList.innerHTML = '';
     if (courses.length === 0) {
@@ -99,59 +98,77 @@ function renderCourseList() {
     });
 }
 
-function renderScheduleGrid(startHour = SCHEDULE_START_HOUR, endHour = SCHEDULE_END_HOUR) {
-    scheduleContainer.innerHTML = '';
+/* Renderiza la grilla de fondo del horario semanal */
+function renderScheduleGrid(container, startHour = SCHEDULE_START_HOUR, endHour = SCHEDULE_END_HOUR) {
+    const gridLines = container.querySelectorAll('.grid-row');
+    gridLines.forEach(line => line.remove());
+    
+    if (!container.querySelector('.grid-header')) {
+        const headerContainer = document.createElement('div');
+        headerContainer.className = 'grid-header col-span-8 grid grid-cols-[60px_repeat(7,1fr)] sticky top-0 bg-white z-10';
+        headerContainer.innerHTML = '<div></div>' + DAY_NAMES.slice(1).map(name => `<div class="text-center font-bold p-2 border-b-2 border-gray-200">${name}</div>`).join('');
+        container.prepend(headerContainer);
+    }
+
     const totalHours = endHour - startHour;
-    scheduleContainer.style.gridTemplateRows = `repeat(${totalHours + 1}, ${HOUR_ROW_HEIGHT}rem)`;
-    const headerContainer = document.createElement('div');
-    headerContainer.className = 'col-span-8 grid grid-cols-[60px_repeat(7,1fr)] sticky top-0 bg-white z-10';
-    headerContainer.innerHTML = '<div></div>' + DAY_NAMES.slice(1).map(name => `<div class="text-center font-bold p-2 border-b-2 border-gray-200">${name}</div>`).join('');
-    scheduleContainer.appendChild(headerContainer);
+    container.style.gridTemplateRows = `auto repeat(${totalHours + 1}, ${HOUR_ROW_HEIGHT_REM}rem)`;
+
     for (let hour = startHour; hour <= endHour; hour++) {
         const row = document.createElement('div');
-        row.className = 'col-span-8 grid grid-cols-[60px_repeat(7,1fr)]';
+        row.className = 'grid-row col-span-8 grid grid-cols-[60px_repeat(7,1fr)]';
         row.style.gridRow = `${hour - startHour + 2}`;
+        
         const timeLabel = document.createElement('div');
         timeLabel.className = 'text-right text-xs text-gray-500 pr-2 -mt-2';
         timeLabel.textContent = `${hour}:00`;
         row.appendChild(timeLabel);
+
         for (let day = 1; day <= 7; day++) {
             const cell = document.createElement('div');
             cell.className = 'border-t border-r border-gray-200 h-full';
             if (day === 1) cell.classList.add('border-l');
             row.appendChild(cell);
         }
-        scheduleContainer.appendChild(row);
+        container.appendChild(row);
     }
 }
 
-function renderScheduleEvents(startHour = SCHEDULE_START_HOUR) {
-    scheduleEventsContainer.innerHTML = '';
+/* Renderiza los bloques de materias sobre la grilla */
+function renderScheduleEvents(container, startHour = SCHEDULE_START_HOUR, forcedParentWidth = null) {
+    container.innerHTML = '';
     const scheduleStartTimeInMinutes = startHour * 60;
-    const gridOffset = 60;
-    const gridTotalWidth = scheduleEventsContainer.offsetWidth - gridOffset;
+    const gridWidth = forcedParentWidth !== null ? forcedParentWidth : container.parentElement.offsetWidth;
+    const dayColumnsWidth = gridWidth - TIME_COLUMN_WIDTH_PX;
+
     courses.forEach(course => {
         const startMinutes = timeToMinutes(course.startTime);
         const endMinutes = timeToMinutes(course.endTime);
         if (endMinutes <= startMinutes) return;
-        const top = ((startMinutes - scheduleStartTimeInMinutes) / 60) * HOUR_ROW_HEIGHT;
-        const height = ((endMinutes - startMinutes) / 60) * HOUR_ROW_HEIGHT;
+
+        const top = ((startMinutes - scheduleStartTimeInMinutes) / 60) * HOUR_ROW_HEIGHT_REM;
+        const height = ((endMinutes - startMinutes) / 60) * HOUR_ROW_HEIGHT_REM;
         const color = getCourseColor(course.name);
+
         const eventEl = document.createElement('div');
-        eventEl.className = 'absolute p-2 rounded-lg text-xs overflow-hidden transition-all duration-300 pointer-events-auto';
+        eventEl.className = 'event-block';
         eventEl.style.backgroundColor = color.bg;
         eventEl.style.color = color.text;
         eventEl.style.border = `1px solid ${color.text}`;
-        eventEl.style.top = `${top + HOUR_ROW_HEIGHT}rem`;
+        eventEl.style.top = `${top}rem`;
         eventEl.style.height = `${height}rem`;
-        eventEl.style.left = `${gridOffset + ((parseInt(course.day) - 1) * (gridTotalWidth/7))}px`;
-        eventEl.style.width = `${(gridTotalWidth/7) - 4}px`;
-        eventEl.innerHTML = `<p class="font-bold truncate">${course.name}</p><p class="truncate">${course.commission}</p><p>${course.startTime} - ${course.endTime}</p>`;
-        scheduleEventsContainer.appendChild(eventEl);
+        eventEl.style.left = `${TIME_COLUMN_WIDTH_PX + ((parseInt(course.day) - 1) * (dayColumnsWidth / 7))}px`;
+        eventEl.style.width = `${(dayColumnsWidth / 7) - 4}px`;
+
+        eventEl.innerHTML = `
+            <p class="event-name">${course.name}</p>
+            <p class="event-details">${course.commission}</p>
+            <p class="event-details">${course.startTime} - ${course.endTime}</p>
+        `;
+        container.appendChild(eventEl);
     });
 }
 
-// --- Logic Functions ---
+/* Verifica si hay conflictos de horario entre materias */
 function checkAllConflicts() {
     let conflictFound = false;
     for (let i = 0; i < courses.length; i++) {
@@ -171,17 +188,18 @@ function checkAllConflicts() {
         if (conflictFound) break;
     }
     if (conflictFound) {
-        statusMessage.textContent = '¡Conflicto de horario detectado!';
+        statusMessage.textContent = 'Conflicto de horario detectado';
         statusMessage.className = 'p-4 rounded-lg text-center font-semibold bg-red-100 text-red-800';
     } else if (courses.length > 0) {
-        statusMessage.textContent = '¡Horarios compatibles!';
+        statusMessage.textContent = 'Horarios compatibles';
         statusMessage.className = 'p-4 rounded-lg text-center font-semibold bg-green-100 text-green-800';
     } else if (currentUserId) {
-        statusMessage.textContent = 'Conectado. ¡Listo para organizar!';
+        statusMessage.textContent = 'Conectado. Listo para organizar';
         statusMessage.className = 'p-4 rounded-lg text-center font-semibold bg-blue-100 text-blue-800';
     }
 }
 
+/* Verifica si una materia específica tiene conflicto con otra */
 function checkIndividualConflict(courseToCheck) {
     for(const course of courses) {
         if (course.id === courseToCheck.id) continue;
@@ -196,56 +214,77 @@ function checkIndividualConflict(courseToCheck) {
     return false;
 }
 
+/* Actualiza toda la interfaz visual */
 function updateUI() {
     checkAllConflicts();
     renderCourseList();
-    renderScheduleGrid();
-    renderScheduleEvents();
+    renderScheduleGrid(scheduleContainer, SCHEDULE_START_HOUR, SCHEDULE_END_HOUR);
+    scheduleEventsContainer.style.top = `${HOUR_ROW_HEIGHT_REM}rem`;
+    renderScheduleEvents(scheduleEventsContainer, SCHEDULE_START_HOUR);
 }
 
-// --- Event Handlers ---
+/* Exporta el horario como imagen PNG */
 async function handleExport() {
     if (courses.length === 0) {
         alert("No hay materias para exportar.");
         return;
     }
     exportLoader.style.display = 'flex';
-    let minHour = 23, maxHour = 0;
+
+    let minMinutes = 24 * 60;
+    let maxMinutes = 0;
     courses.forEach(c => {
-        const startH = parseInt(c.startTime.split(':')[0]);
-        const endH = Math.ceil(timeToMinutes(c.endTime) / 60);
-        if (startH < minHour) minHour = startH;
-        if (endH > maxHour) maxHour = endH;
+        minMinutes = Math.min(minMinutes, timeToMinutes(c.startTime));
+        maxMinutes = Math.max(maxMinutes, timeToMinutes(c.endTime));
     });
-    minHour = Math.max(0, minHour - 1);
-    maxHour = Math.min(24, maxHour);
+
+    const minHour = Math.max(0, Math.floor(minMinutes / 60) - 1);
+    const maxHour = Math.min(24, Math.ceil(maxMinutes / 60));
+
+    const exportContainer = scheduleExportArea.cloneNode(true);
+    exportContainer.id = 'temp-export-container';
+    Object.assign(exportContainer.style, {
+        position: 'absolute',
+        left: '-9999px',
+        top: '0px',
+        width: `${scheduleExportArea.offsetWidth}px`,
+    });
+    document.body.appendChild(exportContainer);
+
+    const exportGrid = exportContainer.querySelector('#schedule-container');
+    const exportEvents = exportContainer.querySelector('#schedule-events');
     
-    const originalScrollTop = window.scrollY;
-    const tempContainer = scheduleExportArea.cloneNode(true);
-    tempContainer.id = 'temp-export-container';
-    Object.assign(tempContainer.style, { position: 'absolute', left: '0', top: '0', zIndex: '-100', width: `${scheduleExportArea.offsetWidth}px` });
-    document.body.appendChild(tempContainer);
+    if (!exportGrid || !exportEvents) {
+        console.error("No se encontraron los elementos del horario en el contenedor clonado.");
+        exportLoader.style.display = 'none';
+        document.body.removeChild(exportContainer);
+        return;
+    }
     
-    const tempGridClone = tempContainer.querySelector('#schedule-container');
-    const tempEventsClone = tempContainer.querySelector('#schedule-events');
-    
-    renderScheduleGrid.call({ scheduleContainer: tempGridClone }, minHour, maxHour);
-    renderScheduleEvents.call({ scheduleEventsContainer: tempEventsClone, courses, scheduleExportArea: tempContainer }, minHour);
+    renderScheduleGrid(exportGrid, minHour, maxHour);
+    exportEvents.style.top = `${HOUR_ROW_HEIGHT_REM}rem`;
+    renderScheduleEvents(exportEvents, minHour, scheduleExportArea.offsetWidth);
 
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    html2canvas(tempContainer, { scale: 2, logging: false }).then(canvas => {
+    html2canvas(exportContainer, {
+        scale: 2.5,
+        logging: false,
+        useCORS: true,
+        windowWidth: exportContainer.scrollWidth,
+        windowHeight: exportContainer.scrollHeight
+    }).then(canvas => {
         const link = document.createElement('a');
         link.download = 'horario.png';
         link.href = canvas.toDataURL('image/png');
         link.click();
     }).finally(() => {
         exportLoader.style.display = 'none';
-        document.body.removeChild(tempContainer);
-        window.scrollTo(0, originalScrollTop);
+        document.body.removeChild(exportContainer);
     });
 }
 
+/* Maneja el evento de agregar una materia */
 async function handleAddCourse(e) {
     e.preventDefault();
     if (!currentUserId) {
@@ -269,11 +308,12 @@ async function handleAddCourse(e) {
         courseForm.reset();
         setFormEnabled(true);
     } catch (error) {
-        console.error("Error adding document: ", error);
+        console.error("Error al guardar la materia: ", error);
         alert("Hubo un error al guardar la materia.");
     }
 }
 
+/* Maneja el evento de eliminar una materia */
 async function handleDeleteCourse(e) {
     if (!e.target.classList.contains('delete-btn') || !currentUserId) return;
     const courseId = e.target.dataset.id;
@@ -281,28 +321,28 @@ async function handleDeleteCourse(e) {
         try {
             await deleteDoc(doc(db, `artifacts/${appId}/users/${currentUserId}/courses`, courseId));
         } catch (error) {
-            console.error("Error deleting document: ", error);
+            console.error("Error al eliminar la materia: ", error);
             alert("Hubo un error al eliminar la materia.");
         }
     }
 }
 
+/* Escucha los cambios en la base de datos de materias en tiempo real */
 function setupFirebaseListener(userId) {
     const coursesCollection = collection(db, `artifacts/${appId}/users/${userId}/courses`);
     if (unsubscribeFromCourses) unsubscribeFromCourses();
     unsubscribeFromCourses = onSnapshot(coursesCollection, (snapshot) => {
         courses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         updateUI();
-    }, (error) => console.error("Error listening to course changes:", error));
+    }, (error) => console.error("Error escuchando cambios en materias:", error));
 }
 
-// --- App Initialization ---
+/* Inicialización de la aplicación y autenticación anónima */
 window.addEventListener('DOMContentLoaded', () => {
     setFormEnabled(false);
 
     onAuthStateChanged(auth, async (user) => {
         if (user) {
-            // User is signed in.
             currentUserId = user.uid;
             userIdDisplay.textContent = `ID de Sesión: ${currentUserId}`;
             setFormEnabled(true);
@@ -310,12 +350,10 @@ window.addEventListener('DOMContentLoaded', () => {
             statusMessage.className = 'p-4 rounded-lg text-center font-semibold bg-blue-100 text-blue-800';
             setupFirebaseListener(currentUserId);
         } else {
-            // User is signed out. Sign in anonymously.
             try {
                 await signInAnonymously(auth);
-                // onAuthStateChanged will be re-triggered with the new user.
             } catch (error) {
-                console.error("Anonymous sign-in failed:", error);
+                console.error("Error en autenticación anónima:", error);
                 statusMessage.textContent = "Error de autenticación. No se podrán guardar los datos.";
                 statusMessage.className = 'p-4 rounded-lg text-center font-semibold bg-red-100 text-red-800';
                 setFormEnabled(false);
