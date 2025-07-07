@@ -1,8 +1,9 @@
+// Importa los módulos necesarios de Firebase para autenticación y Firestore
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+import { getAuth, setPersistence, browserLocalPersistence, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import { getFirestore, collection, doc, addDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
-/* Configuración de Firebase*/
+// Configuración de Firebase para conectar con el proyecto específico
 const firebaseConfig = {
     apiKey: "AIzaSyDPKk9JWrBWg3nimQAKi0xXDKJNsnIjIrk",
     authDomain: "organizador-horarios-bd972.firebaseapp.com",
@@ -12,15 +13,19 @@ const firebaseConfig = {
     appId: "1:551546236622:web:9b19289d4b60d5f2932a9f"
 };
 
-/* Inicialización de Firebase y referencias principales */
+// Inicializa la app de Firebase y los servicios de autenticación y base de datos
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = firebaseConfig.projectId;
 
+// Variables globales para el manejo de materias y usuario
 let courses = [];
 let currentUserId = null;
 let unsubscribeFromCourses = null;
+const courseColorMap = new Map(); // Mapa para asignar colores únicos a cada materia
+
+// Referencias a elementos del DOM
 const courseForm = document.getElementById('course-form');
 const courseList = document.getElementById('course-list');
 const statusMessage = document.getElementById('status-message');
@@ -31,12 +36,14 @@ const exportBtn = document.getElementById('export-btn');
 const exportLoader = document.getElementById('export-loader');
 const scheduleExportArea = document.getElementById('schedule-export-area');
 
-/* Constantes de configuración visual y lógica */
+// Constantes para la visualización del horario
 const HOUR_ROW_HEIGHT_REM = 4;
 const SCHEDULE_START_HOUR = 7;
 const SCHEDULE_END_HOUR = 24;
 const DAY_NAMES = ["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const TIME_COLUMN_WIDTH_PX = 60;
+
+// Paleta de colores predefinida para distinguir materias
 const PREDEFINED_COLORS = [
     { bg: 'hsl(25, 85%, 88%)', text: 'hsl(25, 50%, 40%)' }, { bg: 'hsl(55, 80%, 88%)', text: 'hsl(55, 50%, 40%)' },
     { bg: 'hsl(90, 70%, 88%)', text: 'hsl(90, 50%, 40%)' }, { bg: 'hsl(160, 70%, 88%)', text: 'hsl(160, 50%, 40%)' },
@@ -46,23 +53,29 @@ const PREDEFINED_COLORS = [
     { bg: 'hsl(230, 60%, 90%)', text: 'hsl(230, 50%, 45%)' }, { bg: 'hsl(120, 40%, 88%)', text: 'hsl(120, 30%, 38%)' },
 ];
 
-/* Utilidades para manejo de horarios y colores */
+// Convierte una hora en formato "HH:mm" a minutos totales
 const timeToMinutes = (timeStr) => {
     if (!timeStr) return 0;
     const [hours, minutes] = timeStr.split(':').map(Number);
     return hours * 60 + minutes;
 };
 
-function getCourseColor(courseName) {
-    let hash = 0;
-    for (let i = 0; i < courseName.length; i++) {
-        hash = courseName.charCodeAt(i) + ((hash << 5) - hash);
-        hash = hash & hash;
-    }
-    const index = Math.abs(hash) % PREDEFINED_COLORS.length;
-    return PREDEFINED_COLORS[index];
+// Asigna colores únicos a cada materia según su nombre
+function assignColorsToCourses() {
+    const uniqueCourseNames = [...new Set(courses.map(c => c.name))];
+    courseColorMap.clear();
+    uniqueCourseNames.forEach((name, index) => {
+        const colorIndex = index % PREDEFINED_COLORS.length;
+        courseColorMap.set(name, PREDEFINED_COLORS[colorIndex]);
+    });
 }
 
+// Devuelve el color asignado a una materia, o un color por defecto si no existe
+function getCourseColor(courseName) {
+    return courseColorMap.get(courseName) || { bg: '#E5E7EB', text: '#374151' }; 
+}
+
+// Habilita o deshabilita el formulario de materias
 function setFormEnabled(isEnabled) {
     const formElements = courseForm.elements;
     for (let i = 0; i < formElements.length; i++) {
@@ -70,7 +83,7 @@ function setFormEnabled(isEnabled) {
     }
 }
 
-/* Renderiza la lista de materias cargadas */
+// Renderiza la lista de materias agregadas
 function renderCourseList() {
     courseList.innerHTML = '';
     if (courses.length === 0) {
@@ -98,17 +111,15 @@ function renderCourseList() {
     });
 }
 
-/* Renderiza la grilla de fondo del horario semanal */
+// Dibuja la grilla del horario (líneas y cabeceras de días/horas)
 function renderScheduleGrid(container, startHour = SCHEDULE_START_HOUR, endHour = SCHEDULE_END_HOUR) {
-    const gridLines = container.querySelectorAll('.grid-row');
+    const gridLines = container.querySelectorAll('.grid-row, .grid-header');
     gridLines.forEach(line => line.remove());
     
-    if (!container.querySelector('.grid-header')) {
-        const headerContainer = document.createElement('div');
-        headerContainer.className = 'grid-header col-span-8 grid grid-cols-[60px_repeat(7,1fr)] sticky top-0 bg-white z-10';
-        headerContainer.innerHTML = '<div></div>' + DAY_NAMES.slice(1).map(name => `<div class="text-center font-bold p-2 border-b-2 border-gray-200">${name}</div>`).join('');
-        container.prepend(headerContainer);
-    }
+    const headerContainer = document.createElement('div');
+    headerContainer.className = 'grid-header col-span-8 grid grid-cols-[60px_repeat(7,1fr)] sticky top-0 bg-white z-10';
+    headerContainer.innerHTML = '<div></div>' + DAY_NAMES.slice(1).map(name => `<div class="text-center font-bold p-2 border-b-2 border-gray-200">${name}</div>`).join('');
+    container.prepend(headerContainer);
 
     const totalHours = endHour - startHour;
     container.style.gridTemplateRows = `auto repeat(${totalHours + 1}, ${HOUR_ROW_HEIGHT_REM}rem)`;
@@ -133,7 +144,7 @@ function renderScheduleGrid(container, startHour = SCHEDULE_START_HOUR, endHour 
     }
 }
 
-/* Renderiza los bloques de materias sobre la grilla */
+// Dibuja los bloques de materias sobre la grilla del horario
 function renderScheduleEvents(container, startHour = SCHEDULE_START_HOUR, forcedParentWidth = null) {
     container.innerHTML = '';
     const scheduleStartTimeInMinutes = startHour * 60;
@@ -156,6 +167,7 @@ function renderScheduleEvents(container, startHour = SCHEDULE_START_HOUR, forced
         eventEl.style.border = `1px solid ${color.text}`;
         eventEl.style.top = `${top}rem`;
         eventEl.style.height = `${height}rem`;
+        
         eventEl.style.left = `${TIME_COLUMN_WIDTH_PX + ((parseInt(course.day) - 1) * (dayColumnsWidth / 7))}px`;
         eventEl.style.width = `${(dayColumnsWidth / 7) - 4}px`;
 
@@ -168,7 +180,9 @@ function renderScheduleEvents(container, startHour = SCHEDULE_START_HOUR, forced
     });
 }
 
-/* Verifica si hay conflictos de horario entre materias */
+// --- Funciones de lógica de conflicto y actualización de UI ---
+
+// Verifica si hay algún conflicto de horario entre todas las materias
 function checkAllConflicts() {
     let conflictFound = false;
     for (let i = 0; i < courses.length; i++) {
@@ -199,7 +213,7 @@ function checkAllConflicts() {
     }
 }
 
-/* Verifica si una materia específica tiene conflicto con otra */
+// Verifica si una materia específica tiene conflicto con otra
 function checkIndividualConflict(courseToCheck) {
     for(const course of courses) {
         if (course.id === courseToCheck.id) continue;
@@ -214,8 +228,9 @@ function checkIndividualConflict(courseToCheck) {
     return false;
 }
 
-/* Actualiza toda la interfaz visual */
+// Actualiza toda la interfaz de usuario (colores, conflictos, lista y grilla)
 function updateUI() {
+    assignColorsToCourses();
     checkAllConflicts();
     renderCourseList();
     renderScheduleGrid(scheduleContainer, SCHEDULE_START_HOUR, SCHEDULE_END_HOUR);
@@ -223,7 +238,7 @@ function updateUI() {
     renderScheduleEvents(scheduleEventsContainer, SCHEDULE_START_HOUR);
 }
 
-/* Exporta el horario como imagen PNG */
+// Exporta el horario como imagen PNG usando html2canvas
 async function handleExport() {
     if (courses.length === 0) {
         alert("No hay materias para exportar.");
@@ -240,14 +255,15 @@ async function handleExport() {
 
     const minHour = Math.max(0, Math.floor(minMinutes / 60) - 1);
     const maxHour = Math.min(24, Math.ceil(maxMinutes / 60));
-
     const exportContainer = scheduleExportArea.cloneNode(true);
     exportContainer.id = 'temp-export-container';
+    const exportWidth = 800; 
+    
     Object.assign(exportContainer.style, {
         position: 'absolute',
         left: '-9999px',
         top: '0px',
-        width: `${scheduleExportArea.offsetWidth}px`,
+        width: `${exportWidth}px`,
     });
     document.body.appendChild(exportContainer);
 
@@ -255,7 +271,7 @@ async function handleExport() {
     const exportEvents = exportContainer.querySelector('#schedule-events');
     
     if (!exportGrid || !exportEvents) {
-        console.error("No se encontraron los elementos del horario en el contenedor clonado.");
+        console.error("Could not find schedule elements in cloned container.");
         exportLoader.style.display = 'none';
         document.body.removeChild(exportContainer);
         return;
@@ -263,7 +279,7 @@ async function handleExport() {
     
     renderScheduleGrid(exportGrid, minHour, maxHour);
     exportEvents.style.top = `${HOUR_ROW_HEIGHT_REM}rem`;
-    renderScheduleEvents(exportEvents, minHour, scheduleExportArea.offsetWidth);
+    renderScheduleEvents(exportEvents, minHour, exportWidth);
 
     await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -271,8 +287,8 @@ async function handleExport() {
         scale: 2.5,
         logging: false,
         useCORS: true,
-        windowWidth: exportContainer.scrollWidth,
-        windowHeight: exportContainer.scrollHeight
+        width: exportWidth, 
+        windowWidth: exportWidth,
     }).then(canvas => {
         const link = document.createElement('a');
         link.download = 'horario.png';
@@ -284,7 +300,7 @@ async function handleExport() {
     });
 }
 
-/* Maneja el evento de agregar una materia */
+// Maneja el evento de agregar una nueva materia al horario
 async function handleAddCourse(e) {
     e.preventDefault();
     if (!currentUserId) {
@@ -308,12 +324,12 @@ async function handleAddCourse(e) {
         courseForm.reset();
         setFormEnabled(true);
     } catch (error) {
-        console.error("Error al guardar la materia: ", error);
+        console.error("Error adding document: ", error);
         alert("Hubo un error al guardar la materia.");
     }
 }
 
-/* Maneja el evento de eliminar una materia */
+// Maneja el evento de eliminar una materia del horario
 async function handleDeleteCourse(e) {
     if (!e.target.classList.contains('delete-btn') || !currentUserId) return;
     const courseId = e.target.dataset.id;
@@ -321,46 +337,57 @@ async function handleDeleteCourse(e) {
         try {
             await deleteDoc(doc(db, `artifacts/${appId}/users/${currentUserId}/courses`, courseId));
         } catch (error) {
-            console.error("Error al eliminar la materia: ", error);
+            console.error("Error deleting document: ", error);
             alert("Hubo un error al eliminar la materia.");
         }
     }
 }
 
-/* Escucha los cambios en la base de datos de materias en tiempo real */
+// Configura el listener de Firebase para actualizar en tiempo real las materias del usuario
 function setupFirebaseListener(userId) {
+    if (unsubscribeFromCourses) {
+        unsubscribeFromCourses();
+    }
     const coursesCollection = collection(db, `artifacts/${appId}/users/${userId}/courses`);
-    if (unsubscribeFromCourses) unsubscribeFromCourses();
     unsubscribeFromCourses = onSnapshot(coursesCollection, (snapshot) => {
         courses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         updateUI();
-    }, (error) => console.error("Error escuchando cambios en materias:", error));
+    }, (error) => console.error("Error al escuchar cambios:", error));
 }
 
-/* Inicialización de la aplicación y autenticación anónima */
-window.addEventListener('DOMContentLoaded', () => {
+// Inicializa la autenticación y la app, y configura el estado inicial de la UI
+async function initializeAppAndAuth() {
     setFormEnabled(false);
+    try {
+        await setPersistence(auth, browserLocalPersistence);
 
-    onAuthStateChanged(auth, async (user) => {
-        if (user) {
-            currentUserId = user.uid;
-            userIdDisplay.textContent = `ID de Sesión: ${currentUserId}`;
-            setFormEnabled(true);
-            statusMessage.textContent = 'Conectado. ¡Listo para organizar!';
-            statusMessage.className = 'p-4 rounded-lg text-center font-semibold bg-blue-100 text-blue-800';
-            setupFirebaseListener(currentUserId);
-        } else {
-            try {
-                await signInAnonymously(auth);
-            } catch (error) {
-                console.error("Error en autenticación anónima:", error);
-                statusMessage.textContent = "Error de autenticación. No se podrán guardar los datos.";
-                statusMessage.className = 'p-4 rounded-lg text-center font-semibold bg-red-100 text-red-800';
-                setFormEnabled(false);
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUserId = user.uid;
+                userIdDisplay.textContent = `ID de Sesión: ${user.uid}`;
+                setFormEnabled(true);
+                statusMessage.textContent = 'Conectado. ¡Listo para organizar!';
+                statusMessage.className = 'p-4 rounded-lg text-center font-semibold bg-blue-100 text-blue-800';
+                setupFirebaseListener(user.uid);
+            } else {
+                signInAnonymously(auth).catch((error) => {
+                    console.error("Anonymous sign-in failed:", error);
+                    statusMessage.textContent = "Error de autenticación. No se podrán guardar los datos.";
+                    statusMessage.className = 'p-4 rounded-lg text-center font-semibold bg-red-100 text-red-800';
+                    setFormEnabled(false);
+                });
             }
-        }
-    });
+        });
+    } catch (error) {
+        console.error("Setting persistence failed:", error);
+        statusMessage.textContent = "Error de autenticación. No se podrán guardar los datos.";
+        statusMessage.className = 'p-4 rounded-lg text-center font-semibold bg-red-100 text-red-800';
+    }
+}
 
+// Evento principal: inicializa la app y configura los listeners de UI
+window.addEventListener('DOMContentLoaded', () => {
+    initializeAppAndAuth();
     courseForm.addEventListener('submit', handleAddCourse);
     courseList.addEventListener('click', handleDeleteCourse);
     exportBtn.addEventListener('click', handleExport);

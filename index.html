@@ -4,16 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Organizador de Horarios Universitarios</title>
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Estilos personalizados -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="bg-gray-50 text-gray-800">
 
-    <!-- Loader para exportar PNG -->
     <div id="export-loader" class="flex items-center justify-center">
         <p>Generando imagen...</p>
     </div>
@@ -26,7 +22,6 @@
         </header>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <!-- Columna de ingreso y lista de materias -->
             <div class="lg:col-span-1 space-y-6">
                 <div class="bg-white p-6 rounded-xl shadow-md">
                     <h2 class="text-xl font-semibold mb-4">Añadir Materia</h2>
@@ -71,10 +66,8 @@
                 </div>
             </div>
 
-            <!-- Columna de horario -->
             <div id="schedule-export-area" class="lg:col-span-2 bg-white p-4 rounded-xl shadow-lg relative overflow-x-auto">
                  <div id="schedule-container" class="schedule-grid">
-                    <!-- Los eventos se generan con JavaScript -->
                     <div id="schedule-events" class="absolute top-0 left-0 w-full h-full pointer-events-none">
                     </div>
                 </div>
@@ -82,9 +75,7 @@
         </div>
     </div>
 
-    <!-- Librerías externas -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" xintegrity="sha512-BNaRQnYJYiPSqHHDb58B0yaPfCu+Wgds8Gp/gU33kqBtgNS4tSPHuGibyoVBL5gI9kLmbG0C+nsFNRrr7CTDgQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <!-- Script principal -->
     <script type="module" src="script.js"></script>
 </body>
 </html>

@@ -1,9 +1,7 @@
-/* Fuente principal para todo el sitio */
 body {
     font-family: 'Inter', sans-serif;
 }
 
-/* Scrollbar personalizado para mejor apariencia visual */
 ::-webkit-scrollbar {
     width: 8px;
 }
@@ -21,15 +19,13 @@ body {
     background: #555;
 }
 
-/* Estructura de la grilla del horario semanal */
 .schedule-grid {
     display: grid;
     grid-template-columns: 60px repeat(7, 1fr);
     position: relative;
-    /* Las filas se generan dinámicamente con JavaScript */
+    min-width: 800px; 
 }
 
-/* Loader de pantalla completa al exportar imagen */
 #export-loader {
     display: none;
     position: fixed;
@@ -43,14 +39,12 @@ body {
     font-size: 1.5rem;
 }
 
-/* Apariencia de los campos de formulario deshabilitados */
 form:disabled input, form:disabled select, form:disabled button {
     cursor: not-allowed;
     background-color: #e9ecef;
     opacity: 0.7;
 }
 
-/* Bloques de eventos dentro del horario */
 .event-block {
     position: absolute;
     padding: 0.3rem 0.5rem;
